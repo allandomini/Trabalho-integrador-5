@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Pixelated Castle Adventure - Exterior</title>
+  <style>
+    body { 
+      margin: 0; 
+      overflow: hidden; 
+      font-family: monospace;
+      background-color: #000;
+    }
+    canvas { 
+      display: block; 
+      image-rendering: pixelated;
+    }
+    #info {
+      position: absolute;
+      top: 10px;
+      width: 100%;
+      text-align: center;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.7);
+      padding: 8px 0;
+      font-size: 16px;
+      pointer-events: none;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    #progress {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.7);
+      padding: 8px 15px;
+      border-radius: 0px;
+      font-size: 16px;
+      pointer-events: none;
+      border: 2px solid white;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">Use WASD to move, SPACE to jump, and MOUSE to look around</div>
+  <div id="progress">Items collected: 0/5</div>
+  
+  <!-- Load libraries from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+  
+  <script>
+    // Global variables
+    let camera, scene, renderer;
+    let player = { height: 2, speed: 0.2, jumpStrength: 6, inAir: false, jumpCooldown: 0 };
+    let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false;
+    let velocity = new THREE.Vector3();
+    let prevTime = performance.now();
+    let raycaster = new THREE.Raycaster();
+    let platforms = [];
+    let bridgeSections = []; // Store bridge sections for collision
+    let collectibles = [];
+    let collectedItems = 0;
+    let totalItems = 5;
+    let terrainSize = 300; // Larger terrain
+    let terrain;
+    let noise;
+    let castle;
+    let castleDoorTrigger; // Specific trigger at castle door
+    let bridge;
+    let trees = [];
+    let river;
+    let rocks = [];
+    let mountains = [];
+
+    // FPS camera control variables
+    const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+    const direction = new THREE.Vector3();
+    const moveDirection = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const worldUp = new THREE.Vector3(0, 1, 0);
+
+    // Initialize the game
+    function init() {
+      try {
+        // Set up noise generator for procedural generation
+        noise = new SimplexNoise();
+        
+        // Create scene
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb); // Sky blue
+        scene.fog = new THREE.Fog(0x87ceeb, 0, 250); // Increased fog distance to see castle
+        
+        // Create camera - standard FPS camera setup
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.y = player.height;
+        
+        // Create renderer with pixelated style
+        renderer = new THREE.WebGLRenderer({ antialias: false }); // Turn off antialiasing for pixel style
+        
+        // Use a lower render resolution for pixel effect
+        const pixelRatio = 0.3; // Lower = more pixelated
+        renderer.setPixelRatio(pixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        
+        // Setup exterior scene
+        setupExteriorScene();
+        
+        // Set up controls
+        setupControls();
+        
+        // Position player at the start of the bridge
+        camera.position.set(0, player.height + 1, 40);
+        
+        // Load player position from localStorage if it exists
+        loadPlayerPosition();
+        
+        // Handle window resize
+        window.addEventListener('resize', onWindowResize, false);
+        
+        // Start animation loop
+        animate();
+        
+        console.log("Game initialized successfully");
+      } catch (error) {
+        console.error("Error initializing game:", error);
+        document.body.innerHTML = `<div style="color: white; padding: 20px;">Error initializing game: ${error.message}<br>Please try refreshing the page.</div>`;
+      }
+    }
+
+    // Try to load player position from localStorage (if returning from castle interior)
+    function loadPlayerPosition() {
+      try {
+        const savedPosition = localStorage.getItem('playerPosition');
+        if (savedPosition) {
+          const pos = JSON.parse(savedPosition);
+          camera.position.set(pos.x, pos.y, pos.z);
+          
+          // Clear the saved position
+          localStorage.removeItem('playerPosition');
+        }
+      } catch (e) {
+        console.error("Error loading player position:", e);
+      }
+    }
+
+    // Setup the exterior scene (terrain, castle, trees, etc.)
+    function setupExteriorScene() {
+      // Create lighting - use simpler lighting for pixel art style
+      const ambientLight = new THREE.AmbientLight(0x777777);
+      scene.add(ambientLight);
+      
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(1, 1, 0.5).normalize();
+      scene.add(directionalLight);
+      
+      // Generate terrain
+      generateTerrain();
+      
+      // Create river
+      createRiver();
+      
+      // Create distant mountains
+      createMountains();
+      
+      // Generate platforms
+      generatePlatforms();
+      
+      // Generate collectibles
+      generateCollectibles();
+      
+      // Create castle in the background (rotated 180 degrees)
+      createCastle();
+      
+      // Create bridge to castle
+      createBridge();
+      
+      // Add trees to the landscape
+      createTrees();
+      
+      // Add decorative rocks
+      createRocks();
+    }
+
+    // Create a river flowing under the castle
+    function createRiver() {
+      river = new THREE.Group();
+      
+      // River path
+      const riverWidth = 30;
+      const riverLength = terrainSize * 1.5;
+      
+      // River bed (deeper than water surface)
+      const riverBedGeometry = new THREE.BoxGeometry(riverWidth + 5, 5, riverLength);
+      const riverBedMaterial = new THREE.MeshLambertMaterial({
+        color: 0x553311,
+        flatShading: true
+      });
+      const riverBed = new THREE.Mesh(riverBedGeometry, riverBedMaterial);
+      riverBed.position.set(0, -3, 0);
+      river.add(riverBed);
+      
+      // River water with transparency
+      const riverGeometry = new THREE.BoxGeometry(riverWidth, 2, riverLength);
+      const riverMaterial = new THREE.MeshLambertMaterial({
+        color: 0x3399ff,
+        transparent: true,
+        opacity: 0.7,
+        flatShading: true
+      });
+      const riverWater = new THREE.Mesh(riverGeometry, riverMaterial);
+      riverWater.position.set(0, -1, 0);
+      river.add(riverWater);
+      
+      // Create river banks (elevated terrain on both sides)
+      const bankWidth = 15;
+      const bankHeight = 3;
+      
+      const leftBankGeometry = new THREE.BoxGeometry(bankWidth, bankHeight, riverLength);
+      const rightBankGeometry = new THREE.BoxGeometry(bankWidth, bankHeight, riverLength);
+      
+      const bankMaterial = new THREE.MeshLambertMaterial({
+        color: 0x507830, // Slightly different green than terrain
+        flatShading: true
+      });
+      
+      const leftBank = new THREE.Mesh(leftBankGeometry, bankMaterial);
+      leftBank.position.set(-riverWidth/2 - bankWidth/2, bankHeight/2, 0);
+      river.add(leftBank);
+      
+      const rightBank = new THREE.Mesh(rightBankGeometry, bankMaterial);
+      rightBank.position.set(riverWidth/2 + bankWidth/2, bankHeight/2, 0);
+      river.add(rightBank);
+      
+      // Add details to river
+      
+      // Stones in the river
+      const stoneGeometry = new THREE.BoxGeometry(2, 0.5, 2);
+      const stoneMaterial = new THREE.MeshLambertMaterial({
+        color: 0x777777,
+        flatShading: true
+      });
+      
+      for (let i = 0; i < 20; i++) {
+        const stone = new THREE.Mesh(stoneGeometry, stoneMaterial);
+        stone.position.set(
+          (Math.random() - 0.5) * riverWidth * 0.7,
+          -0.5,
+          (Math.random() - 0.5) * riverLength * 0.8
+        );
+        stone.rotation.y = Math.random() * Math.PI;
+        river.add(stone);
+      }
+      
+      // Add the river to the scene
+      scene.add(river);
+    }
+
+    // Create distant mountains for better landscape
+    function createMountains() {
+      const mountainColors = [
+        0x778899, // Light slate gray
+        0x708090, // Slate gray
+        0x606060, // Darker gray
+        0x505060  // Dark blue-gray
+      ];
+      
+      // Create mountain ranges at different distances
+      for (let range = 0; range < 3; range++) {
+        const distance = 200 + range * 100; // Place mountains at increasing distances
+        const rangeMountains = new THREE.Group();
+        
+        // Create several mountains in this range
+        for (let i = -5; i <= 5; i++) {
+          const width = 50 + Math.random() * 70;
+          const height = 80 + Math.random() * 70;
+          
+          // Triangular mountain shape
+          const mountainGeometry = new THREE.ConeGeometry(width / 2, height, 7);
+          const mountainMaterial = new THREE.MeshLambertMaterial({
+            color: mountainColors[Math.floor(Math.random() * mountainColors.length)],
+            flatShading: true
+          });
+          
+          const mountain = new THREE.Mesh(mountainGeometry, mountainMaterial);
+          mountain.position.set(
+            i * width * 0.6 + Math.random() * 30,
+            height / 2 - 10,
+            -distance + Math.random() * 50
+          );
+          
+          // Slightly random rotation
+          mountain.rotation.y = Math.random() * 0.2;
+          
+          rangeMountains.add(mountain);
+          mountains.push(mountain);
+        }
+        
+        scene.add(rangeMountains);
+      }
+    }
+
+    // Create decorative rocks around the landscape
+    function createRocks() {
+      const rockGeometries = [
+        new THREE.BoxGeometry(3, 3, 3),
+        new THREE.BoxGeometry(4, 2, 4),
+        new THREE.BoxGeometry(2, 4, 2)
+      ];
+      
+      const rockMaterial = new THREE.MeshLambertMaterial({
+        color: 0x888888,
+        flatShading: true
+      });
+      
+      for (let i = 0; i < 40; i++) {
+        const rockGeometry = rockGeometries[Math.floor(Math.random() * rockGeometries.length)];
+        const rock = new THREE.Mesh(rockGeometry, rockMaterial);
+        
+        // Random position on terrain, avoiding river
+        let x, z;
+        do {
+          x = (Math.random() - 0.5) * terrainSize * 0.8;
+          z = (Math.random() - 0.5) * terrainSize * 0.8;
+        } while (Math.abs(x) < 20 && Math.abs(z) < 100); // Avoid river area
+        
+        const y = getTerrainHeightAtPosition(x, z);
+        
+        rock.position.set(x, y, z);
+        rock.rotation.set(
+          Math.random() * 0.2,
+          Math.random() * Math.PI,
+          Math.random() * 0.2
+        );
+        
+        scene.add(rock);
+        rocks.push(rock);
+      }
+    }
+
+    // Create a bridge from the main terrain to the castle with collision detection
+    function createBridge() {
+      bridge = new THREE.Group();
+      
+      // Bridge material
+      const bridgeMaterial = new THREE.MeshLambertMaterial({
+        color: 0x8B4513,
+        flatShading: true
+      });
+      
+      // FIXED: Lower bridge height and adjust for castle rotation
+      const bridgeStart = new THREE.Vector3(0, 2, 40); // Lower starting point
+      const bridgeEnd = new THREE.Vector3(0, 7, 150); // End at castle (now rotated)
+      
+      // Create a continuous flat bridge platform
+      const bridgeLength = 110; // Length to reach the castle
+      const bridgeWidth = 10; // Wider bridge
+      
+      // Main bridge platform
+      const bridgeGeometry = new THREE.BoxGeometry(bridgeWidth, 1, bridgeLength);
+      const bridgePlatform = new THREE.Mesh(bridgeGeometry, bridgeMaterial);
+      
+      // Position at the midpoint
+      bridgePlatform.position.set(0, (bridgeStart.y + bridgeEnd.y) / 2, (bridgeStart.z + bridgeEnd.z) / 2);
+      
+      // Calculate angle to slope the bridge up to the castle (gentler slope)
+      const angle = Math.atan2(bridgeEnd.y - bridgeStart.y, bridgeEnd.z - bridgeStart.z);
+      bridgePlatform.rotation.x = angle;
+      
+      bridge.add(bridgePlatform);
+      
+      // Add the bridge to the collisions system
+      // Split the bridge into multiple collision sections for better detection
+      const numSections = 20;
+      const sectionLength = bridgeLength / numSections;
+      
+      for (let i = 0; i < numSections; i++) {
+        // Calculate section position along the bridge
+        const t = i / numSections;
+        const sectionPos = new THREE.Vector3();
+        sectionPos.x = 0; // Bridge is centered on x
+        sectionPos.y = bridgeStart.y + t * (bridgeEnd.y - bridgeStart.y);
+        sectionPos.z = bridgeStart.z + t * (bridgeEnd.z - bridgeStart.z);
+        
+        // Create collision box for this section
+        const collisionGeometry = new THREE.BoxGeometry(bridgeWidth, 1, sectionLength + 1);
+        const collisionMesh = new THREE.Mesh(
+          collisionGeometry,
+          new THREE.MeshBasicMaterial({ 
+            color: 0x00ff00, 
+            transparent: true, 
+            opacity: 0.0 // Invisible collision boxes
+          })
+        );
+        
+        collisionMesh.position.copy(sectionPos);
+        collisionMesh.position.z += i * sectionLength;
+        collisionMesh.rotation.x = angle;
+        
+        // Add to bridge
+        bridge.add(collisionMesh);
+        
+        // Add to collision detection system
+        bridgeSections.push({
+          mesh: collisionMesh,
+          bounds: new THREE.Box3().setFromObject(collisionMesh),
+          height: sectionPos.y + 0.5 * Math.cos(angle) // Adjust height based on angle
+        });
+      }
+      
+      // Add support pillars for the bridge (visual enhancement)
+      const pillarGeometry = new THREE.BoxGeometry(2, 20, 2);
+      const pillarMaterial = new THREE.MeshLambertMaterial({
+        color: 0x664422,
+        flatShading: true
+      });
+      
+      for (let i = 1; i < 5; i++) {
+        const t = i / 5;
+        const z = bridgeStart.z + t * (bridgeEnd.z - bridgeStart.z);
+        const x = 0; // Bridge is centered on x-axis
+        
+        // Get depth at this point (for water)
+        let pillarHeight = 20;
+        
+        const pillar1 = new THREE.Mesh(pillarGeometry, pillarMaterial);
+        pillar1.position.set(x - bridgeWidth/2 + 1, -pillarHeight/2 + 2, z);
+        bridge.add(pillar1);
+        
+        const pillar2 = new THREE.Mesh(pillarGeometry, pillarMaterial);
+        pillar2.position.set(x + bridgeWidth/2 - 1, -pillarHeight/2 + 2, z);
+        bridge.add(pillar2);
+      }
+      
+      // Add railings
+      const railingHeight = 1.5;
+      const postSpacing = 10;
+      const postsPerSide = Math.floor(bridgeLength / postSpacing);
+      
+      // Create railings along both sides
+      for (let side = -1; side <= 1; side += 2) {
+        if (side === 0) continue; // Skip center
+        
+        for (let i = 0; i <= postsPerSide; i++) {
+          // Calculate post position
+          const t = i / postsPerSide;
+          const z = bridgeStart.z + (t * bridgeLength);
+          const y = bridgeStart.y + t * (bridgeEnd.y - bridgeStart.y);
+          
+          // Create post
+          const postGeometry = new THREE.BoxGeometry(0.6, railingHeight, 0.6);
+          const post = new THREE.Mesh(postGeometry, bridgeMaterial);
+          post.position.set(side * (bridgeWidth / 2 - 0.3), y + railingHeight / 2, z);
+          bridge.add(post);
+          
+          // Connect posts with horizontal railing (except for the last post)
+          if (i < postsPerSide) {
+            const nextT = (i + 1) / postsPerSide;
+            const nextZ = bridgeStart.z + (nextT * bridgeLength);
+            const nextY = bridgeStart.y + nextT * (bridgeEnd.y - bridgeStart.y);
+            
+            // Calculate rail dimensions
+            const dx = 0;
+            const dy = nextY - y;
+            const dz = nextZ - z;
+            const railLength = Math.sqrt(dx*dx + dy*dy + dz*dz);
+            
+            const railGeometry = new THREE.BoxGeometry(0.4, 0.4, railLength);
+            const rail = new THREE.Mesh(railGeometry, bridgeMaterial);
+            
+            // Position at midpoint between posts
+            rail.position.set(side * (bridgeWidth / 2 - 0.3), y + railingHeight / 2, z + postSpacing / 2);
+            
+            // Rotate to follow bridge slope
+            rail.rotation.x = angle;
+            
+            bridge.add(rail);
+          }
+        }
+      }
+      
+      scene.add(bridge);
+    }
+
+    // Create trees around the landscape
+    function createTrees() {
+      // Tree materials
+      const trunkMaterial = new THREE.MeshLambertMaterial({
+        color: 0x8B4513,
+        flatShading: true
+      });
+      
+      const leavesMaterial = new THREE.MeshLambertMaterial({
+        color: 0x228B22,
+        flatShading: true
+      });
+      
+      // Create different tree types
+      const treeTypes = [
+        // Pine tree (cone foliage)
+        function createPineTree(position) {
+          const tree = new THREE.Group();
+          
+          // Trunk
+          const trunkGeometry = new THREE.BoxGeometry(1, 6, 1);
+          const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+          trunk.position.y = 3;
+          tree.add(trunk);
+          
+          // Foliage layers
+          const foliageLayers = 3;
+          for (let i = 0; i < foliageLayers; i++) {
+            const layerSize = 5 - i;
+            const coneGeometry = new THREE.ConeGeometry(layerSize, 4, 8);
+            const cone = new THREE.Mesh(coneGeometry, leavesMaterial);
+            cone.position.y = 5 + i * 3;
+            tree.add(cone);
+          }
+          
+          tree.position.copy(position);
+          scene.add(tree);
+          trees.push(tree);
+        },
+        
+        // Oak tree (cube foliage)
+        function createOakTree(position) {
+          const tree = new THREE.Group();
+          
+          // Trunk
+          const trunkGeometry = new THREE.BoxGeometry(1.2, 8, 1.2);
+          const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+          trunk.position.y = 4;
+          tree.add(trunk);
+          
+          // Foliage
+          const foliageGeometry = new THREE.BoxGeometry(6, 6, 6);
+          const foliage = new THREE.Mesh(foliageGeometry, leavesMaterial);
+          foliage.position.y = 10;
+          tree.add(foliage);
+          
+          tree.position.copy(position);
+          scene.add(tree);
+          trees.push(tree);
+        },
+        
+        // New tree type: Willow (for near river)
+        function createWillowTree(position) {
+          const tree = new THREE.Group();
+          
+          // Trunk
+          const trunkGeometry = new THREE.BoxGeometry(1.5, 10, 1.5);
+          const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+          trunk.position.y = 5;
+          tree.add(trunk);
+          
+          // Drooping foliage (elongated and hanging down)
+          const foliageGeometry = new THREE.SphereGeometry(4, 8, 8);
+          const willow = new THREE.Mesh(foliageGeometry, new THREE.MeshLambertMaterial({
+            color: 0x90EE90, // Light green
+            flatShading: true
+          }));
+          willow.position.y = 9;
+          willow.scale.y = 1.8; // Elongate vertically
+          tree.add(willow);
+          
+          tree.position.copy(position);
+          scene.add(tree);
+          trees.push(tree);
+        }
+      ];
+      
+      // Place trees around the terrain, avoiding the bridge path and river
+      const numTrees = 120; // More trees
+      for (let i = 0; i < numTrees; i++) {
+        // Random position on terrain
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 10 + Math.random() * (terrainSize / 2 - 15); // Keep away from center and edges
+        
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        
+        // Skip if too close to the bridge path or river
+        if ((Math.abs(x) < 15 && z > 30 && z < 160) || 
+            (Math.abs(x) < 20 && Math.abs(z) < 100)) {
+          continue;
+        }
+        
+        // Get terrain height at this position
+        const y = getTerrainHeightAtPosition(x, z);
+        
+        // Select tree type based on location
+        let treeTypeIndex;
+        if (Math.abs(x) < 30 && Math.abs(z) < 110) {
+          // Willows near the river
+          treeTypeIndex = 2;
+        } else {
+          // Random tree type elsewhere
+          treeTypeIndex = Math.floor(Math.random() * 2);
+        }
+        
+        treeTypes[treeTypeIndex](new THREE.Vector3(x, y, z));
+      }
+    }
+
+    // Create a large castle in the background with 180-degree rotation
+    function createCastle() {
+      // Castle group
+      castle = new THREE.Group();
+      
+      // Set up castle materials with pixel art style
+      const stoneMaterial = new THREE.MeshLambertMaterial({ 
+        color: 0x666666, 
+        flatShading: true 
+      });
+      
+      const roofMaterial = new THREE.MeshLambertMaterial({ 
+        color: 0x333333, 
+        flatShading: true 
+      });
+      
+      const woodMaterial = new THREE.MeshLambertMaterial({ 
+        color: 0x8B4513, 
+        flatShading: true 
+      });
+      
+      // Create main castle body
+      const mainBodyGeometry = new THREE.BoxGeometry(60, 30, 40);
+      const mainBody = new THREE.Mesh(mainBodyGeometry, stoneMaterial);
+      mainBody.position.y = 15;
+      castle.add(mainBody);
+      
+      // Create main towers at the corners
+      const towerRadius = 6;
+      const towerHeight = 45;
+      
+      // Create 4 corner towers
+      const towerPositions = [
+        {x: -30, z: -20},
+        {x: 30, z: -20},
+        {x: -30, z: 20},
+        {x: 30, z: 20}
+      ];
+      
+      towerPositions.forEach(pos => {
+        // Main tower cylinder
+        const towerGeometry = new THREE.CylinderGeometry(towerRadius, towerRadius, towerHeight, 8);
+        const tower = new THREE.Mesh(towerGeometry, stoneMaterial);
+        tower.position.set(pos.x, towerHeight/2, pos.z);
+        castle.add(tower);
+        
+        // Tower roof (cone)
+        const roofGeometry = new THREE.ConeGeometry(towerRadius + 2, 15, 8);
+        const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+        roof.position.set(pos.x, towerHeight + 7.5, pos.z);
+        castle.add(roof);
+      });
+      
+      // Create central tower (taller)
+      const centralTowerGeometry = new THREE.CylinderGeometry(10, 10, 60, 8);
+      const centralTower = new THREE.Mesh(centralTowerGeometry, stoneMaterial);
+      centralTower.position.set(0, 30, 0);
+      castle.add(centralTower);
+      
+      // Central tower roof
+      const centralRoofGeometry = new THREE.ConeGeometry(12, 20, 8);
+      const centralRoof = new THREE.Mesh(centralRoofGeometry, roofMaterial);
+      centralRoof.position.set(0, 70, 0);
+      castle.add(centralRoof);
+      
+      // Create castle walls with crenellations
+      const frontWallGeometry = new THREE.BoxGeometry(60, 35, 2);
+      const frontWall = new THREE.Mesh(frontWallGeometry, stoneMaterial);
+      frontWall.position.set(0, 15, -22);
+      castle.add(frontWall);
+      
+      // Create crenellations (merlons) on top of the walls
+      const merlonSize = {width: 3, height: 3, depth: 2};
+      const merlonCount = 12;
+      const merlonSpacing = 60 / merlonCount;
+      
+      for (let i = 0; i < merlonCount; i++) {
+        const merlonGeometry = new THREE.BoxGeometry(merlonSize.width, merlonSize.height, merlonSize.depth);
+        const merlon = new THREE.Mesh(merlonGeometry, stoneMaterial);
+        merlon.position.set(-30 + i * merlonSpacing + merlonSize.width/2, 35, -22);
+        castle.add(merlon);
+      }
+      
+      // Create castle gate (entrance) - IMPROVED: larger and more visible
+      const gateWidth = 12;
+      const gateHeight = 18;
+      
+      // Gate arch (golden to be more visible)
+      const gateArchGeometry = new THREE.BoxGeometry(gateWidth, gateHeight, 4);
+      const gateArchMaterial = new THREE.MeshLambertMaterial({ 
+        color: 0xFFD700, 
+        emissive: 0xFFA500,
+        emissiveIntensity: 0.5
+      });
+      const gateArch = new THREE.Mesh(gateArchGeometry, gateArchMaterial);
+      gateArch.position.set(0, gateHeight/2, -23);
+      castle.add(gateArch);
+      
+      // Gate doors open
+      const doorGeometry = new THREE.BoxGeometry(gateWidth/2 - 0.5, gateHeight - 1, 1);
+      const door1 = new THREE.Mesh(doorGeometry, woodMaterial);
+      door1.position.set(-gateWidth/4 - 1, gateHeight/2 - 0.5, -21);
+      door1.rotation.y = Math.PI / 4; // Open door
+      castle.add(door1);
+      
+      const door2 = new THREE.Mesh(doorGeometry, woodMaterial);
+      door2.position.set(gateWidth/4 + 1, gateHeight/2 - 0.5, -21);
+      door2.rotation.y = -Math.PI / 4; // Open door
+      castle.add(door2);
+      
+      // Add windows to the main body
+      const windowMaterial = new THREE.MeshBasicMaterial({ color: 0x3399ff });
+      const windowSize = { width: 3, height: 5 };
+      
+      // Front windows
+      for (let i = -2; i <= 2; i += 2) {
+        if (i !== 0) { // Skip center where gate is
+          const windowGeometry = new THREE.BoxGeometry(windowSize.width, windowSize.height, 1);
+          const window = new THREE.Mesh(windowGeometry, windowMaterial);
+          window.position.set(i * 10, 20, -21);
+          castle.add(window);
+        }
+      }
+      
+      // Side windows
+      for (let i = -1; i <= 1; i++) {
+        for (let j = -1; j <= 1; j++) {
+          const windowGeometry = new THREE.BoxGeometry(1, windowSize.height, windowSize.width);
+          const window = new THREE.Mesh(windowGeometry, windowMaterial);
+          window.position.set(30 * i, 20, 10 * j);
+          castle.add(window);
+        }
+      }
+      
+      // Add some banners/flags to the castle
+      const flagPoleGeometry = new THREE.CylinderGeometry(0.2, 0.2, 15, 8);
+      const flagPoles = [
+        // On central tower
+        {x: 0, y: 80, z: 0},
+        // On corner towers
+        {x: -30, y: towerHeight + 15, z: -20},
+        {x: 30, y: towerHeight + 15, z: -20},
+        {x: -30, y: towerHeight + 15, z: 20},
+        {x: 30, y: towerHeight + 15, z: 20}
+      ];
+      
+      flagPoles.forEach(pos => {
+        const pole = new THREE.Mesh(flagPoleGeometry, woodMaterial);
+        pole.position.set(pos.x, pos.y, pos.z);
+        castle.add(pole);
+        
+        // Add flag
+        const flagGeometry = new THREE.PlaneGeometry(5, 3);
+        // Random flag color
+        const flagColors = [0xff0000, 0x0000ff, 0xffff00, 0x800080];
+        const flagMaterial = new THREE.MeshLambertMaterial({
+          color: flagColors[Math.floor(Math.random() * flagColors.length)],
+          side: THREE.DoubleSide
+        });
+        const flag = new THREE.Mesh(flagGeometry, flagMaterial);
+        flag.position.set(pos.x + 2.5, pos.y - 2, pos.z);
+        flag.rotation.y = Math.PI / 2;
+        castle.add(flag);
+      });
+      
+      // ROTATE CASTLE 180 DEGREES as requested
+      castle.rotation.y = Math.PI; // 180 degrees in radians
+      
+      // Position castle beyond the river
+      castle.position.set(0, 0, 150);
+      
+      // Create the castle door trigger - specific collision box at the entrance (after rotation)
+      castleDoorTrigger = new THREE.Box3();
+      castleDoorTrigger.setFromCenterAndSize(
+        new THREE.Vector3(0, gateHeight/2 + castle.position.y, castle.position.z + 23), // Positioned at rotated castle door
+        new THREE.Vector3(gateWidth, gateHeight, 6) // Size matches the doorway
+      );
+      
+      // Add castle to scene
+      scene.add(castle);
+
+      // Finalize game setup
+      console.log("Castle created successfully");
+      
+      // Start the game loop
+      animate();
+    }
+
+    // Generate procedural terrain with a more blocky, pixel art style
+    function generateTerrain() {
+      const geometry = new THREE.PlaneGeometry(terrainSize, terrainSize, 128, 128);
+      geometry.rotateX(-Math.PI / 2);
+      
+      // Apply noise to vertex heights
+      const positions = geometry.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        const x = positions.getX(i);
+        const z = positions.getZ(i);
+        
+        // Generate terrain height using noise
+        const frequency = 0.02;
+        const amplitude = 8; // Higher amplitude for more dramatic terrain
+        
+        // For pixelated terrain, we'll quantize the heights
+        let noiseValue = noise.noise2D(x * frequency, z * frequency);
+        
+        // Create secondary noise for more natural terrain
+        const secondaryNoise = noise.noise2D(x * frequency * 3, z * frequency * 3) * 0.3;
+        noiseValue += secondaryNoise;
+        
+        // Quantize noise to create more blocky terrain
+        noiseValue = Math.round(noiseValue * 3) / 3; 
+        
+        // Create a flat area for the bridge start
+        const distToCenter = Math.sqrt(x * x + (z - 45) * (z - 45));
+        if (distToCenter < 12 && z > 30 && z < 50) {
+          noiseValue = 0.5; // Flat platform for bridge start
+        }
+        
+        // Create river valley
+        if (Math.abs(x) < 20 && Math.abs(z) < 110) {
+          noiseValue = -0.5; // Depression for river
+        }
+        
+        // Create elevated area for castle
+        const castleDist = Math.sqrt(x * x + (z - 150) * (z - 150));
+        if (castleDist < 30) {
+          noiseValue = Math.max(noiseValue, 0.8);
+        }
+        
+        positions.setY(i, noiseValue * amplitude);
+      }
+      
+      // Update geometry
+      geometry.computeVertexNormals();
+      
+      // Create color texture based on height
+      const colors = [];
+      for (let i = 0; i < positions.count; i++) {
+        const y = positions.getY(i);
+        
+        if (y < 0) {
+          // Underwater - sandy color
+          colors.push(0.8, 0.7, 0.5);
+        } else if (y < 3) {
+          // Low ground - grass color
+          colors.push(0.2, 0.55, 0.2);
+        } else if (y < 6) {
+          // Medium elevation - darker grass
+          colors.push(0.15, 0.45, 0.15);
+        } else {
+          // Higher elevation - rocky color
+          colors.push(0.5, 0.5, 0.5);
+        }
+      }
+      
+      // Add color attribute to geometry
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      
+      // Create material and mesh - use vertex colors for terrain
+      const material = new THREE.MeshLambertMaterial({
+        vertexColors: true,
+        flatShading: true
+      });
+      
+      terrain = new THREE.Mesh(geometry, material);
+      terrain.receiveShadow = true;
+      scene.add(terrain);
+    }
+
+    // Generate platforms to jump on
+    function generatePlatforms() {
+      const platformGeometry = new THREE.BoxGeometry(3, 0.5, 3);
+      
+      // For pixel art style, use basic materials with limited color palette
+      const platformMaterials = [
+        new THREE.MeshLambertMaterial({ color: 0x996633 }), // Brown
+        new THREE.MeshLambertMaterial({ color: 0x8B4513 }), // SaddleBrown
+        new THREE.MeshLambertMaterial({ color: 0xA52A2A })  // Brown-Red
+      ];
+      
+      // Create several platforms with varying heights and positions
+      for (let i = 0; i < 20; i++) {
+        // Generate platform positions
+        const x = (Math.random() - 0.5) * terrainSize * 0.8;
+        const z = (Math.random() - 0.5) * terrainSize * 0.8;
+        
+        // Skip platforms in the bridge path and river
+        if ((Math.abs(x) < 15 && z > 30 && z < 160) || 
+            (Math.abs(x) < 20 && Math.abs(z) < 100)) {
+          continue;
+        }
+        
+        // Determine height based on terrain + some offset
+        const freq = 0.02;
+        const terrainHeight = Math.round(noise.noise2D(x * freq, z * freq) * 8 * 2) / 2; // Quantize for pixel feel
+        
+        // Platform height increases with distance from center
+        const distanceFromCenter = Math.sqrt(x * x + z * z);
+        const platformHeight = terrainHeight + 1 + Math.floor(distanceFromCenter * 0.1) * 0.5; // Quantize heights
+        
+        // Choose a random material from our limited palette
+        const platformMaterial = platformMaterials[Math.floor(Math.random() * platformMaterials.length)];
+        
+        // Create platform
+        const platform = new THREE.Mesh(platformGeometry, platformMaterial);
+        platform.position.set(
+          Math.round(x * 2) / 2, // Quantize positions for more pixel-like alignment
+          Math.max(platformHeight, 1), // Ensure platform is above water
+          Math.round(z * 2) / 2
+        );
+        platform.castShadow = true;
+        platform.receiveShadow = true;
+        
+        // Add to scene and platforms array for collision detection
+        scene.add(platform);
+        platforms.push({
+          mesh: platform,
+          bounds: new THREE.Box3().setFromObject(platform)
+        });
+      }
+    }
+
+    // Generate collectible items (puzzle elements)
+    function generateCollectibles() {
+      // For pixel art style, use simple geometries
+      const collectibleGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+      
+      // Limited color palette for pixel art style
+      const collectibleMaterial = new THREE.MeshLambertMaterial({ 
+        color: 0xffcc00,
+        emissive: 0xff8800,
+        emissiveIntensity: 0.3,
+        flatShading: true
+      });
+      
+      // Place collectibles on some platforms
+      for (let i = 0; i < totalItems; i++) {
+        const platformIndex = Math.floor(Math.random() * platforms.length);
+        const platform = platforms[platformIndex].mesh;
+        
+        const collectible = new THREE.Mesh(collectibleGeometry, collectibleMaterial);
+        
+        // Position above platform
+        collectible.position.copy(platform.position);
+        collectible.position.y += 1.5;
+        
+        // Animation properties
+        collectible.rotationSpeed = 0.01 + Math.random() * 0.02;
+        collectible.floatSpeed = 0.005 + Math.random() * 0.01;
+        collectible.floatHeight = 0.3 + Math.random() * 0.3;
+        collectible.initialY = collectible.position.y;
+        collectible.floatTime = Math.random() * Math.PI * 2;
+        
+        // Add to scene and collectibles array
+        scene.add(collectible);
+        collectibles.push({
+          mesh: collectible,
+          collected: false,
+          bounds: new THREE.Sphere(collectible.position, 0.5)
+        });
+      }
+    }
+
+    // Set up proper first-person controls using standard FPS game techniques
+    function setupControls() {
+      // Lock pointer and handle movement
+      const onKeyDown = function(event) {
+        switch (event.code) {
+          case 'KeyW': moveForward = true; break;
+          case 'KeyA': moveLeft = true; break;
+          case 'KeyS': moveBackward = true; break;
+          case 'KeyD': moveRight = true; break;
+          case 'Space': 
+            if (canJump && !player.inAir && player.jumpCooldown <= 0) {
+              velocity.y = player.jumpStrength;
+              canJump = false;
+              player.inAir = true;
+              player.jumpCooldown = 0.3; // Add a small cooldown between jumps
+            }
+            break;
+        }
+      };
+      
+      const onKeyUp = function(event) {
+        switch (event.code) {
+          case 'KeyW': moveForward = false; break;
+          case 'KeyA': moveLeft = false; break;
+          case 'KeyS': moveBackward = false; break;
+          case 'KeyD': moveRight = false; break;
+        }
+      };
+      
+      document.addEventListener('keydown', onKeyDown, false);
+      document.addEventListener('keyup', onKeyUp, false);
+      
+      // Mouse look controls - standard FPS camera rotation
+      let isMouseLocked = false;
+      
+      const onMouseMove = function(event) {
+        if (!isMouseLocked) return;
+        
+        // Get mouse movement
+        const movementX = event.movementX || 0;
+        const movementY = event.movementY || 0;
+        
+        // Apply movement to Euler angles
+        // Horizontal mouse movement rotates camera left/right (yaw)
+        euler.y -= movementX * 0.002;
+        
+        // Vertical mouse movement rotates camera up/down (pitch)
+        // Note the negative sign to make upward mouse movement look up
+        euler.x -= movementY * 0.002;
+        
+        // Clamp vertical rotation to prevent camera flipping
+        euler.x = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, euler.x));
+        
+        // Apply euler angles to camera quaternion
+        camera.quaternion.setFromEuler(euler);
+      };
+      
+      // Lock pointer on click
+      const onClick = function() {
+        if (!isMouseLocked) {
+          renderer.domElement.requestPointerLock();
+        }
+      };
+      
+      // Handle pointer lock change
+      const onPointerLockChange = function() {
+        isMouseLocked = document.pointerLockElement === renderer.domElement;
+      };
+      
+      document.addEventListener('mousemove', onMouseMove, false);
+      renderer.domElement.addEventListener('click', onClick, false);
+      document.addEventListener('pointerlockchange', onPointerLockChange, false);
+    }
+
+    // Handle window resize
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // Check if player is in water
+    function isPlayerInWater() {
+      // Check if player is in the river area and below water level
+      return Math.abs(camera.position.x) < 15 && 
+             Math.abs(camera.position.z) < 100 && 
+             camera.position.y < 0;
+    }
+
+    // Check collisions with platforms and bridge
+    function checkPlatformCollisions() {
+      // Player bounding box
+      const playerBox = new THREE.Box3();
+      const playerSize = new THREE.Vector3(1, player.height, 1);
+      const playerPos = new THREE.Vector3(
+        camera.position.x,
+        camera.position.y - player.height / 2,
+        camera.position.z
+      );
+      playerBox.setFromCenterAndSize(playerPos, playerSize);
+      
+      // Check castle door trigger
+      if (playerBox.intersectsBox(castleDoorTrigger)) {
+        enterCastle();
+        return; // Skip other collision checks if entering castle
+      }
+      
+      // Check if in water
+      if (isPlayerInWater()) {
+        // Slow down movement in water
+        player.speed = 0.1;
+        // Apply slight buoyancy
+        if (velocity.y < 0) {
+          velocity.y *= 0.8;
+        }
+      } else {
+        // Normal movement speed on land
+        player.speed = 0.2;
+      }
+      
+      // Check terrain height at player position
+      const terrainHeight = getTerrainHeightAtPosition(camera.position.x, camera.position.z);
+      
+      // Initialize variables to track if player is on any solid surface
+      let onPlatform = false;
+      let onBridge = false;
+      
+      // Check platform collisions
+      for (const platform of platforms) {
+        if (playerBox.intersectsBox(platform.bounds)) {
+          // Check if landing on top of platform
+          if (velocity.y < 0 && 
+              camera.position.y - player.height <= platform.mesh.position.y + 0.25 && 
+              camera.position.y > platform.mesh.position.y) {
+            camera.position.y = platform.mesh.position.y + 0.25 + player.height;
+            velocity.y = 0;
+            canJump = true;
+            player.inAir = false;
+            onPlatform = true;
+          }
+          
+          // Check for horizontal collision (simple)
+          const platformCenter = platform.mesh.position.clone();
+          const playerCenter = new THREE.Vector3(camera.position.x, platformCenter.y, camera.position.z);
+          const distance = platformCenter.distanceTo(playerCenter);
+          
+          if (distance < 2 && Math.abs(camera.position.y - platformCenter.y) < 2) {
+            const pushDirection = playerCenter.sub(platformCenter).normalize();
+            camera.position.x += pushDirection.x * 0.1;
+            camera.position.z += pushDirection.z * 0.1;
+          }
+        }
+      }
+      
+      // IMPROVED: Better bridge collision detection
+      for (const section of bridgeSections) {
+        if (playerBox.intersectsBox(section.bounds)) {
+          // Get the exact Y position of the bridge at player's location
+          // This accounts for the bridge's slope
+          
+          // Calculate player position along bridge
+          const z = camera.position.z;
+          const bridgeStartZ = 40;
+          const bridgeEndZ = 150;
+          const bridgeLength = Math.abs(bridgeEndZ - bridgeStartZ);
+          
+          // Calculate t parameter (0 at start, 1 at end)
+          const t = Math.min(Math.max((z - bridgeStartZ) / bridgeLength, 0), 1);
+          
+          // Calculate bridge height at this position
+          const bridgeStartY = 2;
+          const bridgeEndY = 7;
+          const bridgeHeight = bridgeStartY + t * (bridgeEndY - bridgeStartY) + 0.5; // Add 0.5 for thickness
+          
+          // Check if player is standing on bridge (with some tolerance)
+          if (velocity.y < 0 && 
+              camera.position.y - player.height <= bridgeHeight + 0.5 && 
+              camera.position.y > bridgeHeight - 1) {
+            camera.position.y = bridgeHeight + player.height;
+            velocity.y = 0;
+            canJump = true;
+            player.inAir = false;
+            onBridge = true;
+          }
+        }
+      }
+      
+      // Fall until hitting terrain if not on platform or bridge
+      if (!onPlatform && !onBridge && !isPlayerInWater() && camera.position.y < terrainHeight + player.height) {
+        camera.position.y = terrainHeight + player.height;
+        velocity.y = 0;
+        canJump = true;
+        player.inAir = false;
+      }
+      
+      // Apply gravity if not on any solid surface and not in water
+      if (!onPlatform && !onBridge && camera.position.y > terrainHeight + player.height && !isPlayerInWater()) {
+        canJump = false;
+      }
+    }
+
+    // Get terrain height at a given x,z position
+    function getTerrainHeightAtPosition(x, z) {
+      const frequency = 0.02;
+      
+      // Create flat area for bridge start
+      const distToCenter = Math.sqrt(x * x + (z - 45) * (z - 45));
+      if (distToCenter < 12 && z > 30 && z < 50) {
+        return 2; // Fixed height for bridge start - lower
+      }
+      
+      // River area
+      if (Math.abs(x) < 20 && Math.abs(z) < 110) {
+        return -2; // River depth
+      }
+      
+      // Create elevated area for castle
+      const castleDist = Math.sqrt(x * x + (z - 150) * (z - 150));
+      if (castleDist < 30) {
+        return 7; // Elevated for castle area
+      }
+      
+      // Standard terrain
+      let noiseValue = noise.noise2D(x * frequency, z * frequency);
+      const secondaryNoise = noise.noise2D(x * frequency * 3, z * frequency * 3) * 0.3;
+      noiseValue += secondaryNoise;
+      noiseValue = Math.round(noiseValue * 3) / 3; 
+      
+      return noiseValue * 8;
+    }
+
+    // Check collisions with collectibles
+    function checkCollectibleCollisions() {
+      // Simple distance-based collision for collectibles
+      const playerPosition = camera.position.clone();
+      
+      collectibles.forEach(collectible => {
+        if (!collectible.collected && 
+            playerPosition.distanceTo(collectible.mesh.position) < 1.5) {
+          collectible.collected = true;
+          collectible.mesh.visible = false;
+          collectedItems++;
+          
+          // Update UI
+          document.getElementById('progress').textContent = `Items collected: ${collectedItems}/${totalItems}`;
+          
+          // Check if all items collected
+          if (collectedItems === totalItems) {
+            document.getElementById('info').textContent = "Congratulations! You found all items. Puzzle completed!";
+          }
+        }
+      });
+    }
+
+    // Enter the castle - switch to interior scene file
+    function enterCastle() {
+      // Save current player position to localStorage
+      try {
+        localStorage.setItem('playerPosition', JSON.stringify({
+          x: 0,  // Reset x position for interior
+          y: player.height,
+          z: 20  // Start position inside castle
+        }));
+      } catch (e) {
+        console.error("Error saving player position:", e);
+      }
+      
+      // Navigate to castle interior HTML file
+      window.location.href = "castle-interior.html";
+    }
+
+    // Animate collectibles
+    function animateCollectibles(time) {
+      collectibles.forEach(collectible => {
+        if (!collectible.collected) {
+          // Rotate - use quarter rotations for pixel style
+          collectible.mesh.rotation.y = Math.floor(time * 0.001 * collectible.mesh.rotationSpeed * 4) * (Math.PI / 2);
+          
+          // Float up and down with quantized positions for pixel feel
+          collectible.mesh.floatTime += collectible.mesh.floatSpeed;
+          const floatOffset = Math.sin(collectible.mesh.floatTime) * collectible.mesh.floatHeight;
+          const quantizedOffset = Math.round(floatOffset * 4) / 4; // Quantize to create pixel-like movement
+          collectible.mesh.position.y = collectible.mesh.initialY + quantizedOffset;
+        }
+      });
+    }
+
+    // Animate river water
+    function animateRiver(time) {
+      if (river) {
+        // Get the water mesh (second child of river group)
+        const waterMesh = river.children[1];
+        
+        // Simple bobbing animation
+        waterMesh.position.y = -1 + Math.sin(time * 0.001) * 0.1;
+      }
+    }
+
+    // Main animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      
+      const time = performance.now();
+      const delta = (time - prevTime) / 1000;
+      
+      // Update jump cooldown
+      if (player.jumpCooldown > 0) {
+        player.jumpCooldown -= delta;
+      }
+      
+      // Update velocity with gravity - more realistic physics
+      const gravity = 20; // Stronger gravity for more realistic jumps
+      velocity.y -= gravity * delta; // Apply gravity
+      
+      // Apply terminal velocity for more realistic falling
+      velocity.y = Math.max(velocity.y, -20);
+      
+      // Update player position based on velocity
+      camera.position.y += velocity.y * delta;
+      
+      // Check collisions
+      checkPlatformCollisions();
+      checkCollectibleCollisions();
+      
+      // Calculate move direction based on camera orientation (typical FPS control scheme)
+      direction.set(0, 0, 0);
+      moveDirection.set(0, 0, 0);
+      
+      // Get forward vector (where camera is looking)
+      direction.set(0, 0, -1).applyQuaternion(camera.quaternion);
+      direction.y = 0; // Keep movement on the horizontal plane
+      direction.normalize();
+      
+      // Get right vector (perpendicular to forward)
+      right.crossVectors(direction, worldUp).normalize();
+      
+      // Add movement inputs
+      if (moveForward) moveDirection.add(direction);
+      if (moveBackward) moveDirection.sub(direction);
+      if (moveRight) moveDirection.add(right);
+      if (moveLeft) moveDirection.sub(right);
+      
+      // Only normalize if we're moving
+      if (moveDirection.lengthSq() > 0) {
+        moveDirection.normalize();
+        // Apply movement speed
+        moveDirection.multiplyScalar(player.speed);
+        
+        // Apply movement to position
+        camera.position.add(moveDirection);
+      }
+      
+      // Animate castle for visual interest
+      if (castle) {
+        const flags = castle.children.filter(child => 
+          child.geometry && child.geometry.type === 'PlaneGeometry'
+        );
+        
+        flags.forEach(flag => {
+          // Simulate flag waving
+          flag.rotation.z = Math.sin(time * 0.002 + flag.position.x) * 0.2;
+        });
+      }
+      
+      // Animate river
+      animateRiver(time);
+      
+      // Animate collectibles
+      animateCollectibles(time);
+      
+      // Render the scene
+      renderer.render(scene, camera);
+      
+      prevTime = time;
+    }
+
+    // Initialize the game when the window loads
+    window.onload = init;
+  </script>
+</body>
+</html>

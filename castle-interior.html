@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Pixelated Castle Adventure - Interior</title>
+  <style>
+    body { 
+      margin: 0; 
+      overflow: hidden; 
+      font-family: monospace;
+      background-color: #000;
+    }
+    canvas { 
+      display: block; 
+      image-rendering: pixelated;
+    }
+    #info {
+      position: absolute;
+      top: 10px;
+      width: 100%;
+      text-align: center;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.7);
+      padding: 8px 0;
+      font-size: 16px;
+      pointer-events: none;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    #progress {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.7);
+      padding: 8px 15px;
+      border-radius: 0px;
+      font-size: 16px;
+      pointer-events: none;
+      border: 2px solid white;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">Welcome to Castle Interior - Use WASD to move, MOUSE to look around</div>
+  <div id="progress">Find the exit to return outside</div>
+  
+  <!-- Load libraries from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  
+  <script>
+    // Global variables
+    let camera, scene, renderer;
+    let player = { height: 2, speed: 0.2 };
+    let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+    let prevTime = performance.now();
+    let castleInterior;
+    let exitTrigger;
+
+    // FPS camera control variables
+    const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+    const direction = new THREE.Vector3();
+    const moveDirection = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const worldUp = new THREE.Vector3(0, 1, 0);
+
+    // Initialize the game
+    function init() {
+      try {
+        // Create scene
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x222222); // Dark background
+        scene.fog = new THREE.Fog(0x222222, 0, 80);
+        
+        // Create camera - standard FPS camera setup
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.y = player.height;
+        
+        // Try to load position from localStorage
+        loadPlayerPosition();
+        
+        // Set initial camera orientation
+        camera.quaternion.setFromEuler(new THREE.Euler(0, Math.PI, 0, 'YXZ'));
+        euler.set(0, Math.PI, 0, 'YXZ');
+        
+        // Create renderer with pixelated style
+        renderer = new THREE.WebGLRenderer({ antialias: false }); // Turn off antialiasing for pixel style
+        
+        // Use a lower render resolution for pixel effect
+        const pixelRatio = 0.3; // Lower = more pixelated
+        renderer.setPixelRatio(pixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        
+        // Setup castle interior
+        setupCastleInterior();
+        
+        // Set up controls
+        setupControls();
+        
+        // Handle window resize
+        window.addEventListener('resize', onWindowResize, false);
+        
+        // Start animation loop
+        animate();
+        
+        console.log("Castle interior initialized successfully");
+      } catch (error) {
+        console.error("Error initializing castle interior:", error);
+        document.body.innerHTML = `<div style="color: white; padding: 20px;">Error initializing castle interior: ${error.message}<br>Please try refreshing the page.</div>`;
+      }
+    }
+
+    // Try to load player position from localStorage
+    function loadPlayerPosition() {
+      try {
+        const savedPosition = localStorage.getItem('playerPosition');
+        if (savedPosition) {
+          const pos = JSON.parse(savedPosition);
+          camera.position.set(pos.x, pos.y, pos.z);
+          
+          // Clear the saved position
+          localStorage.removeItem('playerPosition');
+        } else {
+          // Default position if none saved
+          camera.position.set(0, player.height, 20);
+        }
+      } catch (e) {
+        console.error("Error loading player position:", e);
+        // Default position if error
+        camera.position.set(0, player.height, 20);
+      }
+    }
+
+    // Setup the castle interior scene
+    function setupCastleInterior() {
+      // Create castle interior group
+      castleInterior = new THREE.Group();
+      
+      // Interior lighting
+      const interiorAmbient = new THREE.AmbientLight(0x333333);
+      castleInterior.add(interiorAmbient);
+      
+      // Add some torch lights
+      const torchPositions = [
+        {x: -10, y: 5, z: -10},
+        {x: 10, y: 5, z: -10},
+        {x: -10, y: 5, z: 10},
+        {x: 10, y: 5, z: 10},
+        {x: 0, y: 5, z: -15},
+        {x: 0, y: 5, z: 15}
+      ];
+      
+      torchPositions.forEach(pos => {
+        const torchLight = new THREE.PointLight(0xff9900, 1, 20);
+        torchLight.position.set(pos.x, pos.y, pos.z);
+        castleInterior.add(torchLight);
+        
+        // Add a small cube for the torch
+        const torchGeometry = new THREE.BoxGeometry(0.6, 1.5, 0.6);
+        const torchMaterial = new THREE.MeshLambertMaterial({color: 0x8B4513});
+        const torch = new THREE.Mesh(torchGeometry, torchMaterial);
+        torch.position.copy(torchLight.position);
+        castleInterior.add(torch);
+        
+        // Add flame (simple cube with emissive material)
+        const flameGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+        const flameMaterial = new THREE.MeshLambertMaterial({
+          color: 0xff3300,
+          emissive: 0xff9900,
+          emissiveIntensity: 1
+        });
+        const flame = new THREE.Mesh(flameGeometry, flameMaterial);
+        flame.position.copy(torchLight.position);
+        flame.position.y += 1.2;
+        castleInterior.add(flame);
+      });
+      
+      // Main floor with more detailed texture
+      const floorGeometry = new THREE.PlaneGeometry(60, 60, 60, 60);
+      floorGeometry.rotateX(-Math.PI / 2);
+      
+      // Create a stone tile pattern for the floor
+      const floorMaterial = new THREE.MeshLambertMaterial({
+        color: 0x888888,
+        flatShading: true,
+        vertexColors: true
+      });
+      
+      // Add color variations to floor for tile pattern
+      const positions = floorGeometry.attributes.position;
+      const colors = [];
+      
+      for (let i = 0; i < positions.count; i++) {
+        const x = positions.getX(i);
+        const z = positions.getZ(i);
+        
+        // Create checkerboard pattern
+        const tileSize = 5;
+        const tileX = Math.floor((x + 30) / tileSize);
+        const tileZ = Math.floor((z + 30) / tileSize);
+        
+        if ((tileX + tileZ) % 2 === 0) {
+          // Darker tile
+          colors.push(0.5, 0.5, 0.5);
+        } else {
+          // Lighter tile
+          colors.push(0.7, 0.7, 0.7);
+        }
+      }
+      
+      floorGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      
+      const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+      floor.position.y = 0;
+      castleInterior.add(floor);
+      
+      // Interior walls
+      const wallMaterial = new THREE.MeshLambertMaterial({
+        color: 0x777777,
+        flatShading: true
+      });
+      
+      // Main hall walls
+      const wallGeometries = [
+        // Back wall
+        new THREE.BoxGeometry(60, 20, 2),
+        // Front wall with entrance
+        new THREE.BoxGeometry(25, 20, 2),
+        new THREE.BoxGeometry(25, 20, 2),
+        // Side walls
+        new THREE.BoxGeometry(2, 20, 60),
+        new THREE.BoxGeometry(2, 20, 60)
+      ];
+      
+      const wallPositions = [
+        {x: 0, y: 10, z: -30},
+        {x: -17.5, y: 10, z: 30},
+        {x: 17.5, y: 10, z: 30},
+        {x: -30, y: 10, z: 0},
+        {x: 30, y: 10, z: 0}
+      ];
+      
+      for (let i = 0; i < wallGeometries.length; i++) {
+        const wall = new THREE.Mesh(wallGeometries[i], wallMaterial);
+        wall.position.set(wallPositions[i].x, wallPositions[i].y, wallPositions[i].z);
+        castleInterior.add(wall);
+      }
+      
+      // Wall decorations - tapestries
+      const tapestryGeometry = new THREE.PlaneGeometry(10, 8);
+      const tapestryColors = [0x990000, 0x006699, 0x996600];
+      
+      for (let i = 0; i < 3; i++) {
+        const tapestryMaterial = new THREE.MeshLambertMaterial({
+          color: tapestryColors[i],
+          side: THREE.DoubleSide
+        });
+        
+        // Left wall tapestries
+        const leftTapestry = new THREE.Mesh(tapestryGeometry, tapestryMaterial);
+        leftTapestry.position.set(-29, 10, -10 + i * 10);
+        leftTapestry.rotation.y = Math.PI / 2;
+        castleInterior.add(leftTapestry);
+        
+        // Right wall tapestries
+        const rightTapestry = new THREE.Mesh(tapestryGeometry, tapestryMaterial);
+        rightTapestry.position.set(29, 10, -10 + i * 10);
+        rightTapestry.rotation.y = -Math.PI / 2;
+        castleInterior.add(rightTapestry);
+      }
+      
+      // Ceiling
+      const ceilingGeometry = new THREE.PlaneGeometry(60, 60);
+      ceilingGeometry.rotateX(Math.PI / 2);
+      const ceilingMaterial = new THREE.MeshLambertMaterial({
+        color: 0x555555,
+        flatShading: true
+      });
+      const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
+      ceiling.position.y = 20;
+      castleInterior.add(ceiling);
+      
+      // Interior decorations
+      
+      // Throne
+      const throneBaseGeometry = new THREE.BoxGeometry(5, 1, 5);
+      const throneMaterial = new THREE.MeshLambertMaterial({color: 0x8B4513});
+      const throneBase = new THREE.Mesh(throneBaseGeometry, throneMaterial);
+      throneBase.position.set(0, 0.5, -25);
+      castleInterior.add(throneBase);
+      
+      const throneBackGeometry = new THREE.BoxGeometry(5, 8, 1);
+      const throneBack = new THREE.Mesh(throneBackGeometry, throneMaterial);
+      throneBack.position.set(0, 5, -27.5);
+      castleInterior.add(throneBack);
+      
+      // Throne room carpet
+      const carpetGeometry = new THREE.PlaneGeometry(8, 20);
+      carpetGeometry.rotateX(-Math.PI / 2);
+      const carpetMaterial = new THREE.MeshLambertMaterial({
+        color: 0x990000,
+        flatShading: true
+      });
+      const carpet = new THREE.Mesh(carpetGeometry, carpetMaterial);
+      carpet.position.set(0, 0.1, -15); // Slightly above floor
+      castleInterior.add(carpet);
+      
+      // Columns
+      const columnGeometry = new THREE.CylinderGeometry(1.5, 1.5, 20, 8);
+      const columnMaterial = new THREE.MeshLambertMaterial({color: 0x888888});
+      
+      const columnPositions = [
+        {x: -15, z: -15},
+        {x: 15, z: -15},
+        {x: -15, z: 15},
+        {x: 15, z: 15}
+      ];
+      
+      columnPositions.forEach(pos => {
+        const column = new THREE.Mesh(columnGeometry, columnMaterial);
+        column.position.set(pos.x, 10, pos.z);
+        castleInterior.add(column);
+      });
+      
+      // Add some tables and furniture
+      const tableGeometry = new THREE.BoxGeometry(4, 1, 8);
+      const tableMaterial = new THREE.MeshLambertMaterial({color: 0x8B4513});
+      
+      for (let i = -20; i <= 20; i += 10) {
+        const table = new THREE.Mesh(tableGeometry, tableMaterial);
+        table.position.set(i, 0.5, 0);
+        castleInterior.add(table);
+      }
+      
+      // Add some chairs
+      const chairSeatGeometry = new THREE.BoxGeometry(2, 0.5, 2);
+      const chairBackGeometry = new THREE.BoxGeometry(2, 3, 0.5);
+      
+      for (let i = -20; i <= 20; i += 10) {
+        // Chair seats
+        const chairSeat1 = new THREE.Mesh(chairSeatGeometry, tableMaterial);
+        chairSeat1.position.set(i, 0.75, -4);
+        castleInterior.add(chairSeat1);
+        
+        const chairSeat2 = new THREE.Mesh(chairSeatGeometry, tableMaterial);
+        chairSeat2.position.set(i, 0.75, 4);
+        castleInterior.add(chairSeat2);
+        
+        // Chair backs
+        const chairBack1 = new THREE.Mesh(chairBackGeometry, tableMaterial);
+        chairBack1.position.set(i, 2.5, -5);
+        castleInterior.add(chairBack1);
+        
+        const chairBack2 = new THREE.Mesh(chairBackGeometry, tableMaterial);
+        chairBack2.position.set(i, 2.5, 5);
+        castleInterior.add(chairBack2);
+      }
+      
+      // Chandeliers
+      const chandelierBaseGeometry = new THREE.CylinderGeometry(1, 1, 0.5, 8);
+      const chandelierBaseMaterial = new THREE.MeshLambertMaterial({
+        color: 0xaa8866,
+        flatShading: true
+      });
+      
+      const chandelierLightGeometry = new THREE.SphereGeometry(0.5, 8, 8);
+      const chandelierLightMaterial = new THREE.MeshLambertMaterial({
+        color: 0xffcc00,
+        emissive: 0xffaa00,
+        emissiveIntensity: 0.5
+      });
+      
+      const chandelierPositions = [
+        {x: 0, y: 15, z: -15},
+        {x: 0, y: 15, z: 0},
+        {x: 0, y: 15, z: 15}
+      ];
+      
+      chandelierPositions.forEach(pos => {
+        // Base
+        const chandelierBase = new THREE.Mesh(chandelierBaseGeometry, chandelierBaseMaterial);
+        chandelierBase.position.copy(pos);
+        castleInterior.add(chandelierBase);
+        
+        // Add light point
+        const chandelierLight = new THREE.PointLight(0xffcc00, 1, 25);
+        chandelierLight.position.copy(pos);
+        chandelierLight.position.y -= 0.5;
+        castleInterior.add(chandelierLight);
+        
+        // Light bulbs
+        for (let i = 0; i < 4; i++) {
+          const angle = i * Math.PI / 2;
+          const lightBulb = new THREE.Mesh(chandelierLightGeometry, chandelierLightMaterial);
+          lightBulb.position.set(
+            pos.x + Math.cos(angle) * 1.5,
+            pos.y - 0.5,
+            pos.z + Math.sin(angle) * 1.5
+          );
+          castleInterior.add(lightBulb);
+        }
+        
+        // Add chains to ceiling
+        const chainGeometry = new THREE.CylinderGeometry(0.1, 0.1, pos.y - 0.25);
+        const chainMaterial = new THREE.MeshLambertMaterial({color: 0x555555});
+        const chain = new THREE.Mesh(chainGeometry, chainMaterial);
+        chain.position.set(pos.x, pos.y / 2 + 0.25, pos.z);
+        castleInterior.add(chain);
+      });
+      
+      // Add some decorative armor stands
+      const armorStandPositions = [
+        {x: -25, z: -25},
+        {x: 25, z: -25},
+        {x: -25, z: 25},
+        {x: 25, z: 25}
+      ];
+      
+      armorStandPositions.forEach(pos => {
+        // Base
+        const baseGeometry = new THREE.CylinderGeometry(0.5, 0.5, 0.5, 8);
+        const base = new THREE.Mesh(baseGeometry, new THREE.MeshLambertMaterial({color: 0x333333}));
+        base.position.set(pos.x, 0.25, pos.z);
+        castleInterior.add(base);
+        
+        // Pole
+        const poleGeometry = new THREE.CylinderGeometry(0.2, 0.2, 6, 8);
+        const pole = new THREE.Mesh(poleGeometry, new THREE.MeshLambertMaterial({color: 0x555555}));
+        pole.position.set(pos.x, 3, pos.z);
+        castleInterior.add(pole);
+        
+        // Armor torso
+        const torsoGeometry = new THREE.BoxGeometry(2, 3, 1);
+        const torso = new THREE.Mesh(torsoGeometry, new THREE.MeshLambertMaterial({color: 0x888888}));
+        torso.position.set(pos.x, 4, pos.z);
+        castleInterior.add(torso);
+        
+        // Helmet
+        const helmetGeometry = new THREE.SphereGeometry(0.8, 8, 8);
+        const helmet = new THREE.Mesh(helmetGeometry, new THREE.MeshLambertMaterial({color: 0x888888}));
+        helmet.position.set(pos.x, 6, pos.z);
+        castleInterior.add(helmet);
+      });
+      
+      // Create exit door - glowing portal
+      const doorGeometry = new THREE.BoxGeometry(10, 12, 0.5);
+      const doorMaterial = new THREE.MeshLambertMaterial({
+        color: 0xff0000,
+        emissive: 0xaa0000,
+        emissiveIntensity: 0.5
+      });
+      const exitDoor = new THREE.Mesh(doorGeometry, doorMaterial);
+      exitDoor.position.set(0, 7, 29.5); // Against the wall
+      castleInterior.add(exitDoor);
+      
+      // Exit sign
+      const signGeometry = new THREE.BoxGeometry(10, 2, 0.5);
+      const signMaterial = new THREE.MeshLambertMaterial({
+        color: 0xffffff,
+        emissive: 0xffffff,
+        emissiveIntensity: 0.5
+      });
+      const exitSign = new THREE.Mesh(signGeometry, signMaterial);
+      exitSign.position.set(0, 15, 29);
+      castleInterior.add(exitSign);
+      
+      // Define exit trigger - collision box at the door
+      exitTrigger = new THREE.Box3();
+      exitTrigger.setFromCenterAndSize(
+        new THREE.Vector3(0, 7, 29), // At the exit door
+        new THREE.Vector3(12, 12, 3)  // Size of trigger zone
+      );
+      
+      scene.add(castleInterior);
+    }
+
+    // Set up first-person controls
+    function setupControls() {
+      // Lock pointer and handle movement
+      const onKeyDown = function(event) {
+        switch (event.code) {
+          case 'KeyW': moveForward = true; break;
+          case 'KeyA': moveLeft = true; break;
+          case 'KeyS': moveBackward = true; break;
+          case 'KeyD': moveRight = true; break;
+        }
+      };
+      
+      const onKeyUp = function(event) {
+        switch (event.code) {
+          case 'KeyW': moveForward = false; break;
+          case 'KeyA': moveLeft = false; break;
+          case 'KeyS': moveBackward = false; break;
+          case 'KeyD': moveRight = false; break;
+        }
+      };
+      
+      document.addEventListener('keydown', onKeyDown, false);
+      document.addEventListener('keyup', onKeyUp, false);
+      
+      // Mouse look controls - standard FPS camera rotation
+      let isMouseLocked = false;
+      
+      const onMouseMove = function(event) {
+        if (!isMouseLocked) return;
+        
+        // Get mouse movement
+        const movementX = event.movementX || 0;
+        const movementY = event.movementY || 0;
+        
+        // Apply movement to Euler angles
+        // Horizontal mouse movement rotates camera left/right (yaw)
+        euler.y -= movementX * 0.002;
+        
+        // Vertical mouse movement rotates camera up/down (pitch)
+        // Note the negative sign to make upward mouse movement look up
+        euler.x -= movementY * 0.002;
+        
+        // Clamp vertical rotation to prevent camera flipping
+        euler.x = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, euler.x));
+        
+        // Apply euler angles to camera quaternion
+        camera.quaternion.setFromEuler(euler);
+      };
+      
+      // Lock pointer on click
+      const onClick = function() {
+        if (!isMouseLocked) {
+          renderer.domElement.requestPointerLock();
+        }
+      };
+      
+      // Handle pointer lock change
+      const onPointerLockChange = function() {
+        isMouseLocked = document.pointerLockElement === renderer.domElement;
+      };
+      
+      document.addEventListener('mousemove', onMouseMove, false);
+      renderer.domElement.addEventListener('click', onClick, false);
+      document.addEventListener('pointerlockchange', onPointerLockChange, false);
+    }
+
+    // Handle window resize
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // Check for exit trigger
+    function checkExitTrigger() {
+      // Player bounding box
+      const playerBox = new THREE.Box3();
+      const playerSize = new THREE.Vector3(1, player.height, 1);
+      const playerPos = new THREE.Vector3(
+        camera.position.x,
+        camera.position.y - player.height / 2,
+        camera.position.z
+      );
+      playerBox.setFromCenterAndSize(playerPos, playerSize);
+      
+      // Check if player touches the exit trigger
+      if (playerBox.intersectsBox(exitTrigger)) {
+        exitCastle();
+      }
+    }
+
+    // Exit the castle and return to exterior
+    function exitCastle() {
+      // Save position for exterior world - adjusted for rotated castle
+      try {
+        localStorage.setItem('playerPosition', JSON.stringify({
+          x: 0, 
+          y: 8, // Height at castle entrance
+          z: 145 // Just outside rotated castle door
+        }));
+      } catch (e) {
+        console.error("Error saving player position:", e);
+      }
+      
+      // Navigate back to exterior world
+      window.location.href = "index.html";
+    }
+
+    // Main animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      
+      const time = performance.now();
+      const delta = (time - prevTime) / 1000;
+      
+      // Check for exit trigger
+      checkExitTrigger();
+      
+      // Calculate move direction based on camera orientation
+      direction.set(0, 0, 0);
+      moveDirection.set(0, 0, 0);
+      
+      // Get forward vector (where camera is looking)
+      direction.set(0, 0, -1).applyQuaternion(camera.quaternion);
+      direction.y = 0; // Keep movement on the horizontal plane
+      direction.normalize();
+      
+      // Get right vector (perpendicular to forward)
+      right.crossVectors(direction, worldUp).normalize();
+      
+      // Add movement inputs
+      if (moveForward) moveDirection.add(direction);
+      if (moveBackward) moveDirection.sub(direction);
+      if (moveRight) moveDirection.add(right);
+      if (moveLeft) moveDirection.sub(right);
+      
+      // Only normalize if we're moving
+      if (moveDirection.lengthSq() > 0) {
+        moveDirection.normalize();
+        // Apply movement speed
+        moveDirection.multiplyScalar(player.speed);
+        
+        // Apply movement to position
+        camera.position.add(moveDirection);
+      }
+      
+      // Simple collision with interior bounds
+      camera.position.x = Math.max(-28, Math.min(28, camera.position.x));
+      camera.position.z = Math.max(-28, Math.min(28, camera.position.z));
+      camera.position.y = player.height; // Keep fixed height inside
+      
+      // Animate torch flames
+      const flames = castleInterior.children.filter(child => 
+        child.geometry && 
+        child.geometry.type === 'BoxGeometry' && 
+        child.material && 
+        child.material.emissive && 
+        child.material.emissive.r > 0.5
+      );
+      
+      flames.forEach(flame => {
+        // Random flickering
+        flame.scale.y = 0.8 + Math.random() * 0.4;
+        flame.material.emissiveIntensity = 0.4 + Math.random() * 0.2;
+      });
+      
+      // Render the scene
+      renderer.render(scene, camera);
+      
+      prevTime = time;
+    }
+
+    // Initialize the game when the window loads
+    window.onload = init;
+  </script>
+</body>
+</html>
