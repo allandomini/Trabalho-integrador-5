@@ -1,0 +1,65 @@
+<!-- src/app/components/header/header.component.html -->
+<mat-toolbar class="custom-toolbar">
+  <!-- Brand Logo -->
+  <div class="brand">
+    <i class='bx bxs-smile bx-lg'></i>
+    <span class="text">TaskHub</span>
+  </div>
+
+  <!-- Main Navigation Links -->
+  <div class="main-links">
+    <a mat-button routerLink="/" routerLinkActive="active" class="main-link">
+      <i class='bx bxs-dashboard'></i>
+      Dashboard
+    </a>
+    <a mat-button routerLink="/trello-board" routerLinkActive="active" class="main-link">
+      <i class='bx bxs-shopping-bag-alt'></i>
+      Trelloboard
+    </a>
+  </div>
+
+  <!-- Search Bar -->
+  <div class="search-container">
+    <input type="search" placeholder="Search..." class="search-input" />
+    <button type="submit" class="search-btn">
+      <i class='bx bx-search'></i>
+    </button>
+  </div>
+
+  <!-- Theme Toggle -->
+  <div class="theme-toggle">
+    <input type="checkbox" class="checkbox" id="switch-mode" (change)="toggleDarkMode()" hidden />
+    <label class="switch-mode" for="switch-mode">
+      <i class="bx bxs-moon"></i>
+      <i class="bx bx-sun"></i>
+      <div class="ball"></div>
+    </label>
+  </div>
+
+  <!-- Notification Bell -->
+  <a href="#" class="notification" (click)="toggleNotificationMenu($event)">
+    <i class='bx bxs-bell bx-tada-hover'></i>
+    <span class="num">3</span>
+  </a>
+  <div class="notification-menu" [ngClass]="{'show': showNotificationMenu}">
+    <ul>
+      <li>Complete project proposal</li>
+      <li>Team meeting at 3PM</li>
+      <li>Review code changes</li>
+      <li>Update project documentation</li>
+      <li>Submit weekly report</li>
+    </ul>
+  </div>
+
+  <!-- User Profile -->
+  <a href="#" class="profile" (click)="toggleProfileMenu($event)">
+    <img src="assets/avatar.jpg" alt="Profile" />
+  </a>
+  <div class="profile-menu" [ngClass]="{'show': showProfileMenu}">
+    <ul>
+      <li><a href="#"><i class='bx bxs-user'></i> My Profile</a></li>
+      <li><a href="#"><i class='bx bxs-cog'></i> Settings</a></li>
+      <li><a href="#" (click)="logout()"><i class='bx bx-power-off'></i> Logout</a></li>
+    </ul>
+  </div>
+</mat-toolbar>

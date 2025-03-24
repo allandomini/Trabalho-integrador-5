@@ -1,0 +1,23 @@
+// src/app/components/footer/footer.component.scss
+.app-footer {
+    padding: 16px;
+    background-color: oklch(19.37% 0.006 300.98); /* --gray-900 */
+    color: white;
+    text-align: center;
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+  }
+  
+  .social-links a {
+    color: oklch(70.9% 0.015 304.04); /* --gray-400 */
+    transition: color 0.3s ease;
+  }
+  
+  .social-links a:hover {
+    color: white;
+  }
+  
+  mat-icon {
+    vertical-align: middle;
+  }

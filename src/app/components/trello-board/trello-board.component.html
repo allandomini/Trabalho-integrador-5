@@ -1,0 +1,124 @@
+<div class="app-container">
+    <app-header></app-header>
+    <main class="content">
+<div class="trello-board-container">
+    <div class="board-header">
+      <h2>Task Board</h2>
+      <button mat-raised-button color="primary" (click)="openTaskDialog()" matTooltip="Create a new task">
+        <mat-icon>add</mat-icon> New Task
+      </button>
+    </div>
+  
+    <div class="board-content">
+      <div class="board-column">
+        <div class="column-header todo">
+          <h3>TO DO</h3>
+          <span class="task-count">{{ todoTasks.length }}</span>
+        </div>
+        <div 
+          cdkDropList
+          #todoList="cdkDropList"
+          [cdkDropListData]="todoTasks"
+          [cdkDropListConnectedTo]="[doingList, doneList]"
+          id="todoList"
+          class="task-list"
+          (cdkDropListDropped)="drop($event)">
+          <div class="task-card" *ngFor="let task of todoTasks" cdkDrag (click)="openTaskDialog(task)">
+            <div class="favorite-icon" (click)="toggleFavorite(task, $event)" matTooltip="Toggle favorite">
+              <mat-icon [color]="task.isFavorite ? 'accent' : ''">{{ task.isFavorite ? 'star' : 'star_border' }}</mat-icon>
+            </div>
+            <h3>{{ task.title }}</h3>
+            <p class="task-description">{{ task.description }}</p>
+            <div class="task-details">
+              <div class="due-date">
+                <mat-icon>event</mat-icon>
+                <span>{{ task.dueDate | date:'mediumDate' }}</span>
+              </div>
+              <div class="subtasks-info" *ngIf="hasSubtasks(task)">
+                <mat-icon>checklist</mat-icon>
+                <span>{{ getCompletedSubtaskCount(task) }}/{{ getTotalSubtaskCount(task) }}</span>
+              </div>
+            </div>
+          </div>
+          <div *ngIf="todoTasks.length === 0" class="no-tasks">
+            <p>Drag tasks here or create a new one!</p>
+          </div>
+        </div>
+      </div>
+  
+      <div class="board-column">
+        <div class="column-header doing">
+          <h3>DOING</h3>
+          <span class="task-count">{{ doingTasks.length }}</span>
+        </div>
+        <div 
+          cdkDropList
+          #doingList="cdkDropList"
+          [cdkDropListData]="doingTasks"
+          [cdkDropListConnectedTo]="[todoList, doneList]"
+          id="doingList"
+          class="task-list"
+          (cdkDropListDropped)="drop($event)">
+          <div class="task-card" *ngFor="let task of doingTasks" cdkDrag (click)="openTaskDialog(task)">
+            <div class="favorite-icon" (click)="toggleFavorite(task, $event)" matTooltip="Toggle favorite">
+              <mat-icon [color]="task.isFavorite ? 'accent' : ''">{{ task.isFavorite ? 'star' : 'star_border' }}</mat-icon>
+            </div>
+            <h3>{{ task.title }}</h3>
+            <p class="task-description">{{ task.description }}</p>
+            <div class="task-details">
+              <div class="due-date">
+                <mat-icon>event</mat-icon>
+                <span>{{ task.dueDate | date:'mediumDate' }}</span>
+              </div>
+              <div class="subtasks-info" *ngIf="hasSubtasks(task)">
+                <mat-icon>checklist</mat-icon>
+                <span>{{ getCompletedSubtaskCount(task) }}/{{ getTotalSubtaskCount(task) }}</span>
+              </div>
+            </div>
+          </div>
+          <div *ngIf="doingTasks.length === 0" class="no-tasks">
+            <p>Drag tasks here to start working!</p>
+          </div>
+        </div>
+      </div>
+  
+      <div class="board-column">
+        <div class="column-header done">
+          <h3>DONE</h3>
+          <span class="task-count">{{ doneTasks.length }}</span>
+        </div>
+        <div 
+          cdkDropList
+          #doneList="cdkDropList"
+          [cdkDropListData]="doneTasks"
+          [cdkDropListConnectedTo]="[todoList, doingList]"
+          id="doneList"
+          class="task-list"
+          (cdkDropListDropped)="drop($event)">
+          <div class="task-card" *ngFor="let task of doneTasks" cdkDrag (click)="openTaskDialog(task)">
+            <div class="favorite-icon" (click)="toggleFavorite(task, $event)" matTooltip="Toggle favorite">
+              <mat-icon [color]="task.isFavorite ? 'accent' : ''">{{ task.isFavorite ? 'star' : 'star_border' }}</mat-icon>
+            </div>
+            <h3>{{ task.title }}</h3>
+            <p class="task-description">{{ task.description }}</p>
+            <div class="task-details">
+              <div class="due-date">
+                <mat-icon>event</mat-icon>
+                <span>{{ task.dueDate | date:'mediumDate' }}</span>
+              </div>
+              <div class="subtasks-info" *ngIf="hasSubtasks(task)">
+                <mat-icon>checklist</mat-icon>
+                <span>{{ getCompletedSubtaskCount(task) }}/{{ getTotalSubtaskCount(task) }}</span>
+              </div>
+            </div>
+          </div>
+          <div *ngIf="doneTasks.length === 0" class="no-tasks">
+            <p>Completed tasks will appear here!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+<app-footer></app-footer>
+</div>

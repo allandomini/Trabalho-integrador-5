@@ -1,0 +1,75 @@
+<h2 mat-dialog-title>{{ editMode ? 'Edit Task' : 'Create New Task' }}</h2>
+<mat-dialog-content>
+  <form [formGroup]="taskForm">
+    <div class="form-container">
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Title</mat-label>
+        <input matInput formControlName="title" placeholder="Task title">
+        <mat-error *ngIf="taskForm.get('title')?.hasError('required')">
+          Title is required
+        </mat-error>
+      </mat-form-field>
+      
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Description</mat-label>
+        <textarea matInput formControlName="description" placeholder="Task description" rows="3"></textarea>
+      </mat-form-field>
+      
+      <div class="form-row">
+        <mat-form-field appearance="outline" class="half-width">
+          <mat-label>Due Date</mat-label>
+          <input matInput [matDatepicker]="picker" formControlName="dueDate">
+          <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
+          <mat-datepicker #picker></mat-datepicker>
+          <mat-error *ngIf="taskForm.get('dueDate')?.hasError('required')">
+            Due date is required
+          </mat-error>
+        </mat-form-field>
+        
+        <mat-form-field appearance="outline" class="half-width">
+          <mat-label>Status</mat-label>
+          <mat-select formControlName="status">
+            <mat-option *ngFor="let option of statusOptions" [value]="option.value">
+              {{ option.viewValue }}
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+      
+      <div class="subtasks-section">
+        <div class="subtasks-header">
+          <h3>Subtasks</h3>
+          <button type="button" mat-mini-fab color="primary" (click)="addSubtask()" aria-label="Add subtask">
+            <mat-icon>add</mat-icon>
+          </button>
+        </div>
+        
+        <div formArrayName="subtasks">
+          <div *ngFor="let subtask of subtasks.controls; let i = index" [formGroupName]="i" class="subtask-item">
+            <mat-checkbox formControlName="completed" color="primary"></mat-checkbox>
+            <mat-form-field appearance="outline" class="subtask-title">
+              <input matInput formControlName="title" placeholder="Subtask title">
+            </mat-form-field>
+            <button mat-icon-button color="warn" (click)="removeSubtask(i)" aria-label="Remove subtask">
+              <mat-icon>delete</mat-icon>
+            </button>
+          </div>
+          
+          <div *ngIf="subtasks.controls.length === 0" class="no-subtasks">
+            <p>No subtasks. Click the + button to add subtasks.</p>
+          </div>
+        </div>
+      </div>
+      
+      <mat-checkbox formControlName="isFavorite" color="accent" class="favorite-checkbox">
+        Mark as favorite
+      </mat-checkbox>
+    </div>
+  </form>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button (click)="onCancel()">Cancel</button>
+  <button mat-raised-button color="primary" (click)="onSubmit()" [disabled]="taskForm.invalid">
+    {{ editMode ? 'Update' : 'Create' }}
+  </button>
+</mat-dialog-actions>

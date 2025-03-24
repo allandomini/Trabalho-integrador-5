@@ -1,0 +1,7 @@
+{
+  "routes": [
+    "/",
+    "/todo-list",
+    "/trello-board"
+  ]
+}

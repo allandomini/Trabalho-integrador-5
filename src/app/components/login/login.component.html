@@ -1,0 +1,107 @@
+<!-- src/app/components/login/login.component.html -->
+<div class="login-page">
+  <!-- Left side - Blue section -->
+  <div class="brand-section">
+    <div class="header">
+      <div class="logo">Logo</div>
+      <nav class="nav-links">
+        <a href="#">Home</a>
+        <a href="#">About</a>
+        <a href="#">Serviços</a>
+      </nav>
+    </div>
+
+    <div class="content">
+      <h1 class="title">Weble Ing</h1>
+      <p class="description">
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit. 
+        In ac rutrum convallis sagittis librum in malesuada. Eles era retum et 
+        elementum felis dignissim, cursus facilisis consequateros et suiscipit.
+      </p>
+
+      <button class="outline-button">Team and Improvement</button>
+
+      <div class="secondary-content">
+        <h3>Your Pet for Adbar dgore</h3>
+        <div class="button-group">
+          <button class="white-button">Easy test</button>
+          <button class="outline-button-small">Contact us</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="brand-image">
+      <img src="assets/team-meeting.jpg" alt="Team collaboration" />
+    </div>
+
+    <div class="accent-shape"></div>
+  </div>
+
+  <!-- Right side - Login form -->
+  <div class="login-form-container">
+    <div class="login-form-wrapper">
+      <h2>Bem-vindo</h2>
+      <p class="form-subtitle">Entre com suas credenciais para acessar</p>
+
+      <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
+        <div class="form-group">
+          <label for="username">Usuário</label>
+          <div class="input-container">
+            <mat-icon>person</mat-icon>
+            <input
+              id="username"
+              type="text"
+              formControlName="username"
+              placeholder="Digite seu nome de usuário"
+              [ngClass]="{'invalid': loginForm.get('username')?.invalid && loginForm.get('username')?.touched}"
+            />
+          </div>
+          <div *ngIf="loginForm.get('username')?.invalid && loginForm.get('username')?.touched" class="error-message">
+            Username é obrigatório.
+          </div>
+        </div>
+    
+        <div class="form-group">
+          <label for="password">Senha</label>
+          <div class="input-container">
+            <mat-icon>lock</mat-icon>
+            <input
+              id="password"
+              [type]="hidePassword ? 'password' : 'text'"
+              formControlName="password"
+              placeholder="Digite sua senha"
+              [ngClass]="{'invalid': loginForm.get('password')?.invalid && loginForm.get('password')?.touched}"
+            />
+            <button type="button" class="toggle-password" (click)="hidePassword = !hidePassword">
+              <mat-icon>{{ hidePassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+            </button>
+          </div>
+          <div *ngIf="loginForm.get('password')?.invalid && loginForm.get('password')?.touched" class="error-message">
+            Senha deve ter pelo menos 6 caracteres.
+          </div>
+        </div>
+    
+        <div class="form-actions">
+          <div class="remember-me">
+            <mat-checkbox color="primary">Lembrar-me</mat-checkbox>
+          </div>
+          <a href="#" class="forgot-password">Esqueceu a senha?</a>
+        </div>
+    
+        <button class="login-button" type="submit" [disabled]="loginForm.invalid">
+          Entrar
+          <mat-icon>arrow_forward</mat-icon>
+        </button>
+      </form>
+    
+      <div *ngIf="errorMessage" class="error-message error-panel">
+        <mat-icon>error</mat-icon>
+        {{ errorMessage }}
+      </div>
+
+      <div class="register-prompt">
+        Não tem uma conta? <a href="#">Cadastre-se</a>
+      </div>
+    </div>
+  </div>
+</div>
